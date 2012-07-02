@@ -1,39 +1,59 @@
-# This gdb script provides the capability of stepping over longjmp calls 
+# This gdb script provides the capability of stepping over longjmp calls
+#
+# Only support x86/amd64 architecture and single-threaded debugging!
 #
 # Installation: place it at $HOME/.gdbinit
 #
 # -- chaoslawful <at> gmail <dot> com
 
-set $__longjmp_end_offset=78
-set $__longjmp_end=0
-set $__longjmp_tb_set=0
+set $g_exec_addr_top= 0
+set $g_longjmp_entry_addr = 0
+set $g_longjmp_tb_set = 0
 
 define __longjmp_preinit
     echo [34;1mClear any pending breakpoints...[0m\n
-    if $__longjmp_end && $__longjmp_tb_set
-        clear *$__longjmp_end
+    if $g_longjmp_entry_addr && $g_longjmp_tb_set
+        clear *$g_longjmp_entry_addr
     end
-    set $__longjmp_tb_set=0
+    set $g_longjmp_tb_set = 0
+
+    # FIXME: x86/amd64 arch only! Note that amd64 only utilized 48bit addresses
+    set $g_exec_addr_top = (sizeof(void*)==4 ? 0x40000000UL : 0x0000400000000000UL)
 end
 
 define __longjmp_postinit
-    echo [32;1mSave current __longjmp address...[0m\n
-    set $__longjmp_end=__longjmp+$__longjmp_end_offset
+    echo [32;1mSave current __libc_siglongjmp address...[0m\n
+    set $g_longjmp_entry_addr = __libc_siglongjmp
+end
+
+define __longjmp_run_until_userland
+    # XXX: eliminate annoying stepi outputs
+    set height 0
+    set logging file /dev/null
+    set logging redirect on
+    set logging on
+    while $pc > $g_exec_addr_top
+        stepi
+    end
+    set logging off
+
+    # XXX: show current source line to mimic next's behavior
+    list *$pc, *$pc
 end
 
 define __longjmp_proc
-    if !$__longjmp_tb_set
-        set $__longjmp_tb_set=1
-        tbreak *$__longjmp_end
+    if !$g_longjmp_tb_set
+        set $g_longjmp_tb_set=1
+        tbreak *$g_longjmp_entry_addr
         commands
             silent
-            echo [31;1mHit __longjmp, most recent backtrace:\n
-            echo [36m
+            echo [31;1mHit __libc_siglongjmp, most recent backtrace:\n
+            echo [36;1m
             backtrace 3
             echo ...\n
+            set $g_longjmp_tb_set=0
             echo [31;1mStep to the real target...[0m\n
-            set $__longjmp_tb_set=0
-            nexti
+            __longjmp_run_until_userland
         end
     end
 end
