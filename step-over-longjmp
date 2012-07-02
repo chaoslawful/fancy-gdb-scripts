@@ -1,0 +1,66 @@
+# This gdb script provides the capability of stepping over longjmp calls 
+#
+# Installation: place it at $HOME/.gdbinit
+#
+# -- chaoslawful <at> gmail <dot> com
+
+set $__longjmp_end_offset=78
+set $__longjmp_end=0
+set $__longjmp_tb_set=0
+
+define __longjmp_preinit
+    echo [34;1mClear any pending breakpoints...[0m\n
+    if $__longjmp_end && $__longjmp_tb_set
+        clear *$__longjmp_end
+    end
+    set $__longjmp_tb_set=0
+end
+
+define __longjmp_postinit
+    echo [32;1mSave current __longjmp address...[0m\n
+    set $__longjmp_end=__longjmp+$__longjmp_end_offset
+end
+
+define __longjmp_proc
+    if !$__longjmp_tb_set
+        set $__longjmp_tb_set=1
+        tbreak *$__longjmp_end
+        commands
+            silent
+            echo [31;1mHit __longjmp, most recent backtrace:\n
+            echo [36m
+            backtrace 3
+            echo ...\n
+            echo [31;1mStep to the real target...[0m\n
+            set $__longjmp_tb_set=0
+            nexti
+        end
+    end
+end
+
+define hook-run
+    __longjmp_preinit
+end
+
+define hookpost-run
+    __longjmp_postinit
+end
+
+define hook-start
+    __longjmp_preinit
+end
+
+define hookpost-start
+    __longjmp_postinit
+end
+
+define hook-next
+    __longjmp_proc
+end
+
+define hook-step
+    __longjmp_proc
+end
+
+# vi:ft=gdb ts=4 sw=4 et
+
